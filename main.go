@@ -13,8 +13,7 @@ import (
 	"strings"
 
 	"github.com/luweimy/goutil/bytefmt"
-
-	"github.com/luweimy/gosync/workerq"
+	"github.com/luweimy/goutil/workerq"
 )
 
 var (
@@ -31,18 +30,43 @@ func main() {
 
 	// curl -F "action=upload" -F "file=@/Users/luwei/token.md" -F "dst=/Users/luwei/tmp" -F "perm=666" http://localhost:9293/upload
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		workerQueue.AppendWorkerFuncWait(nil, func(worker *workerq.Worker) error {
+		worker := workerQueue.AppendWorkerFunc(nil, func(worker *workerq.Worker) error {
 			upload(w, r)
 			return nil
 		})
+		if err := worker.Wait(); err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
 	})
 
-	// curl -D 'ls -l' http://localhost:9293/exec
+	// curl -d 'ls -l' http://localhost:9293/exec
 	mux.HandleFunc("/exec", func(w http.ResponseWriter, r *http.Request) {
-		workerQueue.AppendWorkerFuncWait(nil, func(worker *workerq.Worker) error {
+		worker := workerQueue.AppendWorkerFunc(nil, func(worker *workerq.Worker) error {
 			execute(w, r)
 			return nil
 		})
+		if err := worker.Wait(); err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
+	})
+
+	// curl -F "n=10" http://localhost:9293/concurrency
+	mux.HandleFunc("/concurrency", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(0); err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		n, err := strconv.ParseInt(r.PostForm.Get("n"), 10, 0)
+		if err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+		workerQueue.SetConcurrency(int(n))
+		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
 	})
 	log.Panic(http.ListenAndServe(*listen, mux))
 }
@@ -50,14 +74,14 @@ func main() {
 func upload(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseMultipartForm(1024 * 1024 * 100)
 	if err != nil {
-		ErrorText(w, r, err)
+		w.Write([]byte(err.Error()))
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
 
 	uploadPath := GetMultipartFormValue(r, "dst")
 	if uploadPath == "" {
-		ErrorText(w, r, "dst path not exist")
+		w.Write([]byte("dst path not exist"))
 		return
 	}
 	perm := GetMultipartFormValue(r, "perm")
@@ -66,7 +90,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 	}
 	permInt, err := strconv.ParseUint(perm, 8, 0)
 	if err != nil {
-		ErrorText(w, r, fmt.Errorf("perm value err(%v)", err))
+		w.Write([]byte(err.Error()))
 		return
 	}
 
@@ -77,25 +101,25 @@ func upload(w http.ResponseWriter, r *http.Request) {
 		for _, item := range handlers {
 			fdst, err := os.OpenFile(uploadPath, os.O_CREATE|os.O_RDWR, os.FileMode(permInt))
 			if err != nil {
-				ErrorText(w, r, fmt.Sprintf("open dst file(%v): %s", err, uploadPath))
+				w.Write([]byte(err.Error()))
 				return
 			}
 			defer fdst.Close()
 
 			fsrc, err := item.Open()
 			if err != nil {
-				ErrorText(w, r, fmt.Sprintf("open src file(%v): %s", err, item.Filename))
+				w.Write([]byte(err.Error()))
 				return
 			}
 			defer fsrc.Close()
 
-			n, err := io.Copy(fdst, fsrc)
+			_, err = io.Copy(fdst, fsrc)
 			if err != nil {
-				ErrorText(w, r, fmt.Sprintf("io copy file(%v): written %d", err, n))
+				w.Write([]byte(err.Error()))
 				return
 			}
 
-			SuccessText(w, r, fmt.Sprintf("upload  %s  %s", uploadPath, bytefmt.ByteSize(item.Size)))
+			w.Write([]byte(fmt.Sprintf("upload  %s  %s", uploadPath, bytefmt.ByteSize(item.Size))))
 		}
 	}
 }
@@ -103,7 +127,7 @@ func upload(w http.ResponseWriter, r *http.Request) {
 func execute(w http.ResponseWriter, r *http.Request) {
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		ErrorText(w, r, err)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
@@ -118,9 +142,9 @@ func execute(w http.ResponseWriter, r *http.Request) {
 	cmd.Env = os.Environ()
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		ErrorText(w, r, err)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
-	SuccessText(w, r, string(output))
+	w.Write([]byte(string(output)))
 }
