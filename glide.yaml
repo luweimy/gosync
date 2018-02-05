@@ -1,0 +1,6 @@
+package: github.com/luweimy/gosync
+import:
+- package: github.com/luweimy/goutil
+  subpackages:
+  - bytefmt
+  - workerq

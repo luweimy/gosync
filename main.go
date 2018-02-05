@@ -17,18 +17,22 @@ import (
 )
 
 var (
-	workerQueue = workerq.NewWorkerQueue(1)
+	workerQueue *workerq.WorkerQueue
 )
 
 func main() {
-	listen := flag.String("listen", ":9293", "addr listen")
+	listen := flag.String("listen", ":9293", "address listen")
+	concurrency := flag.Int("concurrency", 1, "concurrency limit")
 	if !flag.Parsed() {
 		flag.Parse()
 	}
 
+	// 创建WorkerQueue
+	workerQueue = workerq.NewWorkerQueue(*concurrency)
+
 	mux := http.NewServeMux()
 
-	// curl -F "action=upload" -F "file=@/Users/luwei/token.md" -F "dst=/Users/luwei/tmp" -F "perm=666" http://localhost:9293/upload
+	// curl -F "file=@/Users/luwei/token.md" -F "dst=/Users/luwei/tmp" -F "perm=666" http://localhost:9293/upload
 	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
 		worker := workerQueue.AppendWorkerFunc(nil, func(worker *workerq.Worker) error {
 			upload(w, r)
@@ -38,7 +42,7 @@ func main() {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
+		w.Write([]byte(fmt.Sprintf("\n%s %s %s done.\n", NowString(), r.Method, r.URL)))
 	})
 
 	// curl -d 'ls -l' http://localhost:9293/exec
@@ -51,7 +55,7 @@ func main() {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
+		w.Write([]byte(fmt.Sprintf("\n%s %s %s done.\n", NowString(), r.Method, r.URL)))
 	})
 
 	// curl -F "n=10" http://localhost:9293/concurrency
@@ -66,8 +70,9 @@ func main() {
 			return
 		}
 		workerQueue.SetConcurrency(int(n))
-		w.Write([]byte(fmt.Sprintf("%s %s %s done.", NowString(), r.Method, r.URL)))
+		w.Write([]byte(fmt.Sprintf("\n%s %s %s done.\n", NowString(), r.Method, r.URL)))
 	})
+
 	log.Panic(http.ListenAndServe(*listen, mux))
 }
 
