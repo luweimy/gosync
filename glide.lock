@@ -2,7 +2,7 @@ hash: df9b2a8bfd01e7539155cded4fdf60313269e4af37d90f000f3f2b048a017690
 updated: 2018-02-05T10:02:25.900219084+08:00
 imports:
 - name: github.com/luweimy/goutil
-  version: 53bffa5f8d1f8ec035f83d64b256c9d70b2f69e2
+  version: b5351829492d0ad62a16737350a944dcd3a60f68
   subpackages:
   - bytefmt
   - workerq
